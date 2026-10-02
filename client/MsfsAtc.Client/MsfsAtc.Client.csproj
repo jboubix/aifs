@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MsfsAtc.Client</RootNamespace>
+    <AssemblyName>MsfsAtc.Client</AssemblyName>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!--
+    SimConnect is optional at build time. The managed wrapper + native DLL ship with the MSFS SDK
+    (Developer Mode -> Help -> SDK Installer). We look for them, in order, in:
+      1. client/libs/simconnect/                      (copy the two DLLs here)
+      2. %MSFS2024_SDK%  then  %MSFS_SDK%             (set by the SDK installer)
+      3. -p:SimConnectSdkRoot=<path>                  (explicit override)
+    If found, SIMCONNECT_SDK is defined and the real SimConnect implementation is compiled in.
+    Otherwise only the mock simulator is available.
+  -->
+  <PropertyGroup>
+    <SimConnectLibDir>$(MSBuildThisFileDirectory)..\libs\simconnect\</SimConnectLibDir>
+    <SimConnectSdkRoot Condition="'$(SimConnectSdkRoot)' == '' and '$(MSFS2024_SDK)' != ''">$(MSFS2024_SDK)</SimConnectSdkRoot>
+    <SimConnectSdkRoot Condition="'$(SimConnectSdkRoot)' == '' and '$(MSFS_SDK)' != ''">$(MSFS_SDK)</SimConnectSdkRoot>
+    <SimConnectSdkRoot Condition="'$(SimConnectSdkRoot)' != ''">$([MSBuild]::EnsureTrailingSlash('$(SimConnectSdkRoot)'))</SimConnectSdkRoot>
+
+    <SimConnectManagedDll Condition="Exists('$(SimConnectLibDir)Microsoft.FlightSimulator.SimConnect.dll')">$(SimConnectLibDir)Microsoft.FlightSimulator.SimConnect.dll</SimConnectManagedDll>
+    <SimConnectManagedDll Condition="'$(SimConnectManagedDll)' == '' and '$(SimConnectSdkRoot)' != '' and Exists('$(SimConnectSdkRoot)SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll')">$(SimConnectSdkRoot)SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</SimConnectManagedDll>
+
+    <SimConnectNativeDll Condition="Exists('$(SimConnectLibDir)SimConnect.dll')">$(SimConnectLibDir)SimConnect.dll</SimConnectNativeDll>
+    <SimConnectNativeDll Condition="'$(SimConnectNativeDll)' == '' and '$(SimConnectSdkRoot)' != '' and Exists('$(SimConnectSdkRoot)SimConnect SDK\lib\SimConnect.dll')">$(SimConnectSdkRoot)SimConnect SDK\lib\SimConnect.dll</SimConnectNativeDll>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SimConnectManagedDll)' != '' and '$(SimConnectNativeDll)' != ''">
+    <DefineConstants>$(DefineConstants);SIMCONNECT_SDK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SimConnectManagedDll)' != '' and '$(SimConnectNativeDll)' != ''">
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath>$(SimConnectManagedDll)</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Include="$(SimConnectNativeDll)" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ReportSimConnect" BeforeTargets="CoreCompile">
+    <Message Importance="high" Condition="'$(SimConnectManagedDll)' != ''" Text="SimConnect SDK found: real SimConnect support enabled." />
+    <Message Importance="high" Condition="'$(SimConnectManagedDll)' == ''" Text="SimConnect SDK not found: building with mock simulator only (see client/README.md)." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

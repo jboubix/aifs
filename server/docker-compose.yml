@@ -1,0 +1,75 @@
+# Local stack: app (decision modules) + Redis + separate ASR and TTS.
+# ASR_STUB_TEXT and ATC_DEVIATION_SUSTAIN_S=0 make the integration test deterministic.
+# For a flying session, set ATC_DEVIATION_SUSTAIN_S=5 so a brief altitude blip is not called.
+
+name: msfs-atc
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  asr:
+    build: ./services/asr
+    environment:
+      ASR_PROVIDER: stub
+      ASR_STUB_TEXT: "request climb and maintain 5000"
+    ports:
+      - "8101:8101"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  tts:
+    build: ./services/tts
+    environment:
+      TTS_PROVIDER: stub
+    ports:
+      - "8102:8102"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      ATC_REDIS_URL: redis://redis:6379/0
+      # Default ASR is the Compose stub. For the host Whisper process, set
+      # ATC_ASR_URL=http://host.docker.internal:8104
+      ATC_ASR_URL: ${ATC_ASR_URL:-http://asr:8101}
+      # Default TTS is the Compose stub. For the Kokoro voice, run services/tts on the host
+      # and set ATC_TTS_URL=http://host.docker.internal:8103
+      ATC_TTS_URL: ${ATC_TTS_URL:-http://tts:8102}
+      # "echo" speaks the pilot's words back. "brain" is the ATC controller.
+      ATC_REPLY_MODE: ${ATC_REPLY_MODE:-brain}
+      ATC_RADIO_FX: "true"
+      ATC_DEVIATION_SUSTAIN_S: "0"
+      ATC_ALTITUDE_TOLERANCE_FT: "200"
+      ATC_AUTH_TOKEN: ""
+      ATC_WEATHER_INGEST: "false"
+    # Host port 8000 matches the sim client. Override with ATC_HOST_PORT if 8000 is taken.
+    ports:
+      - "${ATC_HOST_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      asr:
+        condition: service_healthy
+      tts:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
